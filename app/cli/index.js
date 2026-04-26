@@ -33,7 +33,7 @@ export function main(argv) {
   const generator = args._[0];
   const hostUrl = args['--local']
     ? 'http://localhost:3000'
-    : 'https://romannurik.github.io/AndroidAssetStudio';
+    : 'https://logue.dev/AndroidAssetStudio';
   let paramPrefix = '#';
 
   if (args['--help']) {

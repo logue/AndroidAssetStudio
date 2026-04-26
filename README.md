@@ -1,8 +1,11 @@
 # Android Asset Studio
 
-**[Open the Android Asset Studio](https://romannurik.github.io/AndroidAssetStudio/)**
+> [!NOTE]
+> This project is for creating icons for use in your own projects. It has been modified to support high-resolution icon generation for Electron and Tauri.
 
-**[See the older version](https://romannurik.github.io/AndroidAssetStudio/older-version/) if you're having trouble with the new version**
+**[Open the Android Asset Studio](https://logue.dev/AndroidAssetStudio/)**
+
+**[See the older version](https://romannurik.github.io/AndroidAssetStudio/) if you're having trouble with the new version**
 
 A web-based set of tools for generating graphics and other assets that would eventually be in an Android application's res/ directory.
 

@@ -28,22 +28,22 @@ import merge from 'merge-stream';
 import { injectManifest } from 'workbox-build';
 import prettyBytes from 'pretty-bytes';
 import webpack from 'webpack';
-import imagemin, { gifsicle, mozjpeg, optipng } from 'gulp-imagemin';
 import autoprefixer from 'gulp-autoprefixer';
 
 // CJS gulp plugins loaded via createRequire for compatibility
 const require = createRequire(import.meta.url);
-const cache = require('gulp-cache');
 const changedModule = require('gulp-changed');
 const changed = changedModule.default || changedModule;
+const matter = require('gray-matter');
+const { minify: minifyHtml } = require('html-minifier-terser');
+const nunjucks = require('nunjucks');
+const through2 = require('through2');
 const sassGlob = require('gulp-sass-glob');
 const gulpIf = require('gulp-if');
 const csso = require('gulp-csso');
 const tap = require('gulp-tap');
-const nucleus = require('gulp-nucleus');
 const replace = require('gulp-replace');
-const minifyHtml = require('gulp-minify-html');
-const ghPages = require('gulp-gh-pages');
+const ghPages = require('gh-pages');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,6 +57,68 @@ let DEV_MODE = false;
 let BASE_HREF = DEV_MODE ? '/' : '/AndroidAssetStudio/';
 
 let webpackInstance;
+
+function renderNunjucksPages(templateRootPath) {
+  const env = new nunjucks.Environment(
+    new nunjucks.FileSystemLoader(templateRootPath),
+    { noCache: true }
+  );
+
+  return through2.obj((file, enc, cb) => {
+    if (file.isNull()) {
+      cb(null, file);
+      return;
+    }
+
+    if (file.isStream()) {
+      cb(new Error('Streaming is not supported for HTML templates.'));
+      return;
+    }
+
+    try {
+      const parsed = matter(file.contents.toString());
+      const rendered = env.renderString(parsed.content, parsed.data);
+
+      file.contents = Buffer.from(rendered);
+      file.contextData = parsed.data;
+
+      if (parsed.data.destination) {
+        file.path = path.join(
+          file.base,
+          parsed.data.destination.replace(/^\//, '')
+        );
+      }
+
+      cb(null, file);
+    } catch (error) {
+      cb(error);
+    }
+  });
+}
+
+function minifyHtmlFiles() {
+  return through2.obj((file, enc, cb) => {
+    if (file.isNull()) {
+      cb(null, file);
+      return;
+    }
+
+    if (file.isStream()) {
+      cb(new Error('Streaming is not supported for HTML minification.'));
+      return;
+    }
+
+    minifyHtml(file.contents.toString(), {
+      collapseWhitespace: true,
+      removeComments: true,
+    })
+      .then(output => {
+        file.contents = Buffer.from(output);
+        cb(null, file);
+      })
+      .catch(error => cb(error));
+  });
+}
 
 function printWebpackStats(stats) {
   if (!stats) {
@@ -100,18 +162,7 @@ gulp.task('webpack', async cb => {
 
 // Optimize Images
 gulp.task('res', () => {
-  return gulp
-    .src('app/res/**/*')
-    .pipe(
-      cache(
-        imagemin([
-          mozjpeg({ progressive: true }),
-          optipng(),
-          gifsicle({ interlaced: true }),
-        ])
-      )
-    )
-    .pipe(gulp.dest('dist/res'));
+  return gulp.src('app/res/**/*').pipe(gulp.dest('dist/res'));
 });
 
 // Copy All Files At The Root Level (app) and lib
@@ -161,13 +212,9 @@ gulp.task('styles', () => {
 gulp.task('html', () => {
   return gulp
     .src(['app/**/*.html', '!app/**/_*.html'])
-    .pipe(
-      nucleus({
-        templateRootPath: ['app'],
-      }).on('error', errorHandler)
-    )
+    .pipe(renderNunjucksPages(['app']))
     .pipe(replace(/%%BASE_HREF%%/g, BASE_HREF))
-    .pipe(gulpIf(!DEV_MODE, minifyHtml()))
+    .pipe(gulpIf(!DEV_MODE, minifyHtmlFiles()))
     .pipe(
       tap((file, t) => {
         if (file.contextData.destination) {
@@ -181,7 +228,6 @@ gulp.task('html', () => {
 // Clean Output Directory
 gulp.task('clean', cb => {
   deleteSync(['.tmp', 'dist']);
-  cache.clearAll();
   cb();
 });
 
@@ -193,7 +239,7 @@ const setDevMode = cb => {
 // Watch Files For Changes & Reload
 gulp.task(
   'serve',
-  gulp.series(setDevMode, 'copy', 'styles', 'html', 'webpack', () => {
+  gulp.series(setDevMode, 'copy', 'styles', 'html', async () => {
     bs.init({
       notify: false,
       // Run as an https by uncommenting 'https: true'
@@ -214,16 +260,21 @@ gulp.task(
     gulp.watch(['app/**/*.{scss,css}'], gulp.series('styles', r));
     gulp.watch(['app/res/**/*'], gulp.series('res', r));
 
-    if (webpackInstance) {
-      webpackInstance.watch({}, (err, stats) => {
-        if (err) {
-          console.error(err.stack || err);
-          return;
-        }
-        printWebpackStats(stats);
-        reload();
-      });
-    }
+    const webpackConfigUrl = new URL('./webpack.config.mjs', import.meta.url);
+    webpackConfigUrl.searchParams.set('t', Date.now());
+    const webpackConfigModule = await import(webpackConfigUrl.href);
+    const webpackConfig = webpackConfigModule.default;
+    webpackConfig.mode = 'development';
+
+    webpackInstance = webpack(webpackConfig);
+    webpackInstance.watch({}, (err, stats) => {
+      if (err) {
+        console.error(err.stack || err);
+        return;
+      }
+      printWebpackStats(stats);
+      reload();
+    });
   })
 );
 
@@ -266,6 +317,6 @@ gulp.task(
 );
 
 // Deploy to GitHub pages
-gulp.task('deploy', () => {
-  return gulp.src('dist/**/*', { dot: true }).pipe(ghPages());
+gulp.task('deploy', cb => {
+  ghPages.publish('dist', cb);
 });

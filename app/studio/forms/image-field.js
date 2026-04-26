@@ -28,7 +28,7 @@ import { Util } from '../util';
 
 import * as studio from '../index';
 
-import { CLIPART_NAMES } from './image-field-clipart';
+import { CLIPART_NAMES, loadClipartNames } from './image-field-clipart';
 
 const WEB_FONTS_API_KEY = 'AIzaSyAtSe8wlXPCUaLQ4LTyPKpbzBBPJAzEXmU';
 const WEB_FONTS_API_URL = `https://www.googleapis.com/webfonts/v1/webfonts?key=${WEB_FONTS_API_KEY}&fields=items(family)`;
@@ -46,6 +46,22 @@ export class ImageField extends Field {
     this.clipartSrc_ = null;
     this.lastNotifiedValue_ = {};
     this.spaceFormValues_ = {}; // cache
+  }
+
+  renderClipartItems_(clipartListEl, clipartNames) {
+    clipartListEl.empty();
+
+    clipartNames.forEach(clipartSrc => {
+      $('<div>')
+        .addClass('form-image-clipart-item')
+        .attr('data-name', clipartSrc)
+        .attr('title', clipartSrc)
+        .text(clipartSrc)
+        .click(() => this.loadClipart_(clipartSrc))
+        .appendTo(clipartListEl);
+    });
+
+    this.$clipartItems = clipartListEl.find('.form-image-clipart-item');
   }
 
   createUi(container) {
@@ -122,22 +138,21 @@ export class ImageField extends Field {
         .addClass('form-image-clipart-list')
         .addClass('cancel-parent-scroll')
         .appendTo(clipartParamsEl);
+      this.$clipartItems = $();
 
-      CLIPART_NAMES.forEach(clipartSrc => {
+      if (CLIPART_NAMES.length) {
+        this.renderClipartItems_(clipartListEl, CLIPART_NAMES);
+      } else {
         $('<div>')
           .addClass('form-image-clipart-item')
-          .attr('data-name', clipartSrc)
-          .attr('title', clipartSrc)
-          .text(clipartSrc)
-          .click(() => this.loadClipart_(clipartSrc))
+          .text('Loading clipart...')
           .appendTo(clipartListEl);
-      });
-
-      this.$clipartItems = clipartListEl.find('.form-image-clipart-item');
+      }
 
       let clipartFilterEl = $('<input>')
         .addClass('form-image-clipart-filter')
         .attr('placeholder', 'Find clipart')
+        .prop('disabled', !CLIPART_NAMES.length)
         .on('input', ev => {
           let $filter = $(ev.currentTarget);
           let val = $filter
@@ -154,6 +169,20 @@ export class ImageField extends Field {
         })
         .prependTo(clipartParamsEl);
 
+      loadClipartNames()
+        .then(clipartNames => {
+          this.renderClipartItems_(clipartListEl, clipartNames);
+          clipartFilterEl.prop('disabled', false).trigger('input');
+        })
+        .catch(error => {
+          console.error(error);
+          clipartListEl.empty();
+          $('<div>')
+            .addClass('form-image-clipart-item')
+            .text('Failed to load clipart')
+            .appendTo(clipartListEl);
+        });
+
       var clipartAttributionEl = $('<div>')
         .addClass('form-image-clipart-attribution')
         .html(
@@ -161,8 +190,8 @@ export class ImageField extends Field {
               For clipart sources, visit
               <a target="_blank"
                  class="external-link"
-                 href="https://github.com/google/material-design-icons">
-              Material Design Icons on GitHub</a>
+                 href="https://github.com/marella/material-icons">
+              Material Icons on GitHub</a>
               `
         )
         .appendTo(clipartParamsEl);

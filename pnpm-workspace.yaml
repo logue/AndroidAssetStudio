@@ -1,0 +1,8 @@
+allowBuilds:
+  '@parcel/watcher': true
+  core-js: true
+  es5-ext: true
+  fsevents: true
+  gifsicle: true
+  mozjpeg: true
+  optipng-bin: true

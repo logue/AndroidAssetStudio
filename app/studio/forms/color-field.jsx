@@ -18,7 +18,7 @@ import $ from 'jquery';
 import tinycolor from 'tinycolor2';
 
 import React from 'react';
-import ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import { SketchPicker } from 'react-color';
 
 import { Field } from './field';
@@ -137,15 +137,16 @@ export class ColorField extends Field {
 
     let update_ = color => this.setValue(color, true);
 
-    ReactDOM.render(
+    const mountNode = $('<div>').appendTo(fieldContainer).get(0);
+    const root = createRoot(mountNode);
+    root.render(
       <ColorPickerWidget
         ref={c => (this.pickerWidget = c)}
         id={this.getHtmlId()}
         color={this.getValue().toRgb()}
         showAlpha={this.params_.alpha}
         onChange={update_}
-      />,
-      $('<div>').appendTo(fieldContainer).get(0)
+      />
     );
   }
 

@@ -1,27 +1,26 @@
 import { precacheAndRoute } from 'workbox-precaching';
+import { registerRoute } from 'workbox-routing';
+import { cacheFirst } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
+import { initialize } from 'workbox-google-analytics';
 
 precacheAndRoute(self.__WB_MANIFEST);
 
-importScripts(
-  'https://storage.googleapis.com/workbox-cdn/releases/3.3.1/workbox-sw.js'
-);
-
-workbox.precaching.precacheAndRoute([]);
-
-workbox.routing.registerRoute(
+registerRoute(
   new RegExp('https://(?:fonts|www).(?:googleapis|gstatic).com/(.*)'),
-  workbox.strategies.cacheFirst({
+  cacheFirst({
     cacheName: 'google-fonts',
     plugins: [
-      new workbox.expiration.Plugin({
+      new ExpirationPlugin({
         maxEntries: 20,
         purgeOnQuotaError: true,
       }),
-      new workbox.cacheableResponse.Plugin({
+      new CacheableResponsePlugin({
         statuses: [0, 200],
       }),
     ],
   })
 );
 
-workbox.googleAnalytics.initialize();
+initialize();

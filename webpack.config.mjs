@@ -1,9 +1,9 @@
-import process from 'process';
-import path from 'path';
+import process from 'node:process';
+import path from 'node:path';
 import webpack from 'webpack';
 import { InjectManifest } from 'workbox-webpack-plugin';
 
-module.exports = {
+export default {
   entry: {
     app: './app/app.entry.js',
   },
@@ -47,8 +47,16 @@ module.exports = {
           {
             loader: 'babel-loader',
             options: {
-              presets: ['@babel/preset-env', '@babel/preset-react'],
-              plugins: ['@babel/plugin-proposal-object-rest-spread'],
+              presets: [
+                [
+                  '@babel/preset-env',
+                  {
+                    useBuiltIns: 'usage',
+                    corejs: 3,
+                  },
+                ],
+                '@babel/preset-react',
+              ],
             },
           },
         ],

@@ -14,17 +14,42 @@
  * limitations under the License.
  */
 
-const gulp = require('gulp');
-const $ = require('gulp-load-plugins')();
-const sass = require('gulp-sass')(require('sass'));
-const del = require('del');
-const browserSync = require('browser-sync');
-const reload = browserSync.reload;
-const merge = require('merge-stream');
-const path = require('path');
-const workboxBuild = require('workbox-build');
-const prettyBytes = require('pretty-bytes');
-const webpack = require('webpack');
+import { createRequire } from 'node:module';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import gulp from 'gulp';
+import gulpSassLib from 'gulp-sass';
+import * as sassLib from 'sass';
+import { deleteSync } from 'del';
+import browserSync from 'browser-sync';
+import merge from 'merge-stream';
+import { injectManifest } from 'workbox-build';
+import prettyBytes from 'pretty-bytes';
+import webpack from 'webpack';
+import imagemin, { gifsicle, mozjpeg, optipng } from 'gulp-imagemin';
+import autoprefixer from 'gulp-autoprefixer';
+
+// CJS gulp plugins loaded via createRequire for compatibility
+const require = createRequire(import.meta.url);
+const cache = require('gulp-cache');
+const changedModule = require('gulp-changed');
+const changed = changedModule.default || changedModule;
+const sassGlob = require('gulp-sass-glob');
+const gulpIf = require('gulp-if');
+const csso = require('gulp-csso');
+const tap = require('gulp-tap');
+const nucleus = require('gulp-nucleus');
+const replace = require('gulp-replace');
+const minifyHtml = require('gulp-minify-html');
+const ghPages = require('gulp-gh-pages');
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const sass = gulpSassLib(sassLib);
+const bs = browserSync.create();
+const reload = bs.reload.bind(bs);
 
 const AUTOPREFIXER_BROWSERS = ['ff >= 30', 'chrome >= 34', 'safari >= 7'];
 
@@ -34,6 +59,10 @@ let BASE_HREF = DEV_MODE ? '/' : '/AndroidAssetStudio/';
 let webpackInstance;
 
 function printWebpackStats(stats) {
+  if (!stats) {
+    console.error('Webpack finished without stats output.');
+    return;
+  }
   console.log(
     stats.toString({
       modules: false,
@@ -51,12 +80,19 @@ function errorHandler(error) {
 }
 
 // Lint JavaScript
-gulp.task('webpack', cb => {
-  // force reload webpack config
-  delete require.cache[require.resolve('./webpack.config.js')];
-  let webpackConfig = require('./webpack.config.js');
+gulp.task('webpack', async cb => {
+  // force reload webpack config via cache-busted URL
+  const webpackConfigUrl = new URL('./webpack.config.mjs', import.meta.url);
+  webpackConfigUrl.searchParams.set('t', Date.now());
+  const webpackConfigModule = await import(webpackConfigUrl.href);
+  const webpackConfig = webpackConfigModule.default;
   webpackConfig.mode = DEV_MODE ? 'development' : 'production';
   webpackInstance = webpack(webpackConfig, (err, stats) => {
+    if (err) {
+      console.error(err.stack || err);
+      cb(err);
+      return;
+    }
     printWebpackStats(stats);
     cb();
   });
@@ -67,11 +103,12 @@ gulp.task('res', () => {
   return gulp
     .src('app/res/**/*')
     .pipe(
-      $.cache(
-        $.imagemin({
-          progressive: true,
-          interlaced: true,
-        })
+      cache(
+        imagemin([
+          mozjpeg({ progressive: true }),
+          optipng(),
+          gifsicle({ interlaced: true }),
+        ])
       )
     )
     .pipe(gulp.dest('dist/res'));
@@ -79,14 +116,21 @@ gulp.task('res', () => {
 
 // Copy All Files At The Root Level (app) and lib
 gulp.task('copy', () => {
-  return merge(
+  const streams = [
     gulp
       .src(['app/favicon.ico', 'app/sw.js'], { dot: true, nodir: true })
       .pipe(gulp.dest('dist')),
-    gulp
-      .src('older-version/**/*', { dot: true })
-      .pipe(gulp.dest('dist/older-version'))
-  );
+  ];
+
+  if (existsSync('older-version')) {
+    streams.push(
+      gulp
+        .src('older-version/**/*', { dot: true })
+        .pipe(gulp.dest('dist/older-version'))
+    );
+  }
+
+  return merge(...streams);
 });
 
 // Compile and Automatically Prefix Stylesheets
@@ -95,8 +139,8 @@ gulp.task('styles', () => {
   return (
     gulp
       .src('app/app.entry.scss')
-      .pipe($.changed('styles', { extension: '.scss' }))
-      .pipe($.sassGlob())
+      .pipe(changed('styles', { extension: '.scss' }))
+      .pipe(sassGlob())
       .pipe(
         sass({
           style: 'expanded',
@@ -104,11 +148,11 @@ gulp.task('styles', () => {
           quiet: true,
         }).on('error', errorHandler)
       )
-      .pipe($.autoprefixer(AUTOPREFIXER_BROWSERS))
+      .pipe(autoprefixer({ overrideBrowserslist: AUTOPREFIXER_BROWSERS }))
       // Concatenate And Minify Styles
-      .pipe($.if(!DEV_MODE, $.csso()))
+      .pipe(gulpIf(!DEV_MODE, csso()))
       .pipe(
-        $.tap(file => (file.path = file.path.replace(/\.entry\.css$/, '.css')))
+        tap(file => (file.path = file.path.replace(/\.entry\.css$/, '.css')))
       )
       .pipe(gulp.dest('dist'))
   );
@@ -118,14 +162,14 @@ gulp.task('html', () => {
   return gulp
     .src(['app/**/*.html', '!app/**/_*.html'])
     .pipe(
-      $.nucleus({
+      nucleus({
         templateRootPath: ['app'],
       }).on('error', errorHandler)
     )
-    .pipe($.replace(/%%BASE_HREF%%/g, BASE_HREF))
-    .pipe($.if(!DEV_MODE, $.minifyHtml()))
+    .pipe(replace(/%%BASE_HREF%%/g, BASE_HREF))
+    .pipe(gulpIf(!DEV_MODE, minifyHtml()))
     .pipe(
-      $.tap((file, t) => {
+      tap((file, t) => {
         if (file.contextData.destination) {
           file.path = path.join('./app', file.contextData.destination);
         }
@@ -136,8 +180,8 @@ gulp.task('html', () => {
 
 // Clean Output Directory
 gulp.task('clean', cb => {
-  del.sync(['.tmp', 'dist']);
-  $.cache.clearAll();
+  deleteSync(['.tmp', 'dist']);
+  cache.clearAll();
   cb();
 });
 
@@ -150,7 +194,7 @@ const setDevMode = cb => {
 gulp.task(
   'serve',
   gulp.series(setDevMode, 'copy', 'styles', 'html', 'webpack', () => {
-    browserSync({
+    bs.init({
       notify: false,
       // Run as an https by uncommenting 'https: true'
       // Note: this uses an unsigned certificate which on first access
@@ -172,6 +216,10 @@ gulp.task(
 
     if (webpackInstance) {
       webpackInstance.watch({}, (err, stats) => {
+        if (err) {
+          console.error(err.stack || err);
+          return;
+        }
         printWebpackStats(stats);
         reload();
       });
@@ -180,7 +228,7 @@ gulp.task(
 );
 
 gulp.task('service-worker', async () => {
-  const obj = await workboxBuild.injectManifest({
+  const obj = await injectManifest({
     swSrc: path.join('app', 'sw-prod.js'),
     swDest: path.join('dist', 'sw.js'),
     globDirectory: 'dist',
@@ -209,7 +257,7 @@ gulp.task(
 gulp.task(
   'serve:dist',
   gulp.series('default', () => {
-    browserSync({
+    bs.init({
       notify: false,
       server: 'dist',
       port: 3001,
@@ -219,5 +267,5 @@ gulp.task(
 
 // Deploy to GitHub pages
 gulp.task('deploy', () => {
-  return gulp.src('dist/**/*', { dot: true }).pipe($.ghPages());
+  return gulp.src('dist/**/*', { dot: true }).pipe(ghPages());
 });

@@ -1,7 +1,7 @@
 # Android Asset Studio
 
 > [!NOTE]
-> This project is for creating icons for use in your own projects. It has been modified to support high-resolution icon generation for Electron and Tauri.
+> This project is for creating icons for use in my projects. It has been modified to support high-resolution icon generation for Electron and Tauri.
 
 **[Open the Android Asset Studio](https://logue.dev/AndroidAssetStudio/)**
 

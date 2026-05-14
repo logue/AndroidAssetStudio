@@ -1,4 +1,9 @@
 {
   "upgrade": true,
-  "reject": ["del", "gulp-imagemin", "pretty-bytes"]
+  "reject": [
+    "del",
+    "gulp-imagemin",
+    "pretty-bytes",
+    "through2"
+  ]
 }

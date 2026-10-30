@@ -6,3 +6,6 @@ allowBuilds:
   gifsicle: true
   mozjpeg: true
   optipng-bin: true
+
+overrides:
+  deepmerge: '4.3.1'
